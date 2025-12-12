@@ -1,0 +1,550 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+    FREE
+    PREMIUM
+    PRO
+    ADMIN
+}
+
+enum UserStatus {
+    ACTIVE
+    SUSPENDED
+    DELETED
+}
+
+enum AlbumStatus {
+    ACTIVE
+    ARCHIVED
+    DELETED
+}
+
+enum AlbumPrivacy {
+    PRIVATE
+    PUBLIC
+}
+
+enum MediaType {
+    IMAGE
+    VIDEO
+}
+
+enum MediaStatus {
+    UPLOADING
+    PROCESSING
+    READY
+    FAILED
+    DELETED
+}
+
+enum AnalyticsEventType {
+    ALBUM_VIEW
+    ALBUM_SCAN
+    MEDIA_UPLOAD
+    MEDIA_VIEW
+    MEDIA_DOWNLOAD
+    BULK_DOWNLOAD
+}
+
+enum SubscriptionTier {
+    FREE
+    BASIC
+    PRO
+    PREMIUM
+}
+
+enum SubscriptionStatus {
+    ACTIVE
+    CANCELLED
+    EXPIRED
+    TRIAL
+    PAST_DUE
+    INCOMPLETE
+}
+
+enum PaymentProvider {
+    STRIPE
+    PAYSTACK
+}
+
+enum ContactSeverity {
+    LOW
+    MEDIUM
+    HIGH
+    URGENT
+}
+
+enum ContactStatus {
+    NEW
+    IN_PROGRESS
+    RESOLVED
+    CLOSED
+}
+
+model User {
+    id               String     @id @default(uuid())
+    email            String     @unique
+    passwordHash     String     @map("password_hash")
+    firstName        String?    @map("first_name")
+    lastName         String?    @map("last_name")
+    role             UserRole   @default(FREE)
+    status           UserStatus @default(ACTIVE)
+    emailVerified    Boolean    @default(false) @map("email_verified")
+    emailVerifiedAt  DateTime?  @map("email_verified_at")
+    trialEndsAt      DateTime?  @map("trial_ends_at")
+    trialStartedAt   DateTime?  @map("trial_started_at")
+    storageUsedBytes BigInt     @default(0) @map("storage_used_bytes")
+    albumCount       Int        @default(0) @map("album_count")
+    createdAt        DateTime   @default(now()) @map("created_at")
+    updatedAt        DateTime   @updatedAt @map("updated_at")
+    lastLoginAt      DateTime?  @map("last_login_at")
+
+    refreshTokens   RefreshToken[]
+    passwordResets  PasswordReset[]
+    albums          Album[]
+    subscriptions   Subscription[]
+    usageStats      UsageStats?
+    contactMessages ContactMessage[]
+    specialRequests SpecialRequest[]
+
+    @@index([email])
+    @@map("users")
+}
+
+model RefreshToken {
+    id        String   @id @default(uuid())
+    token     String   @unique
+    userId    String   @map("user_id")
+    expiresAt DateTime @map("expires_at")
+    createdAt DateTime @default(now()) @map("created_at")
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId])
+    @@index([token])
+    @@map("refresh_tokens")
+}
+
+model PasswordReset {
+    id        String    @id @default(uuid())
+    userId    String    @map("user_id")
+    token     String    @unique
+    expiresAt DateTime  @map("expires_at")
+    usedAt    DateTime? @map("used_at")
+    createdAt DateTime  @default(now()) @map("created_at")
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([token])
+    @@index([userId])
+    @@map("password_resets")
+}
+
+model Album {
+    id                     String       @id @default(uuid())
+    ownerId                String       @map("owner_id")
+    name                   String
+    description            String?
+    slug                   String       @unique
+    qrCodeId               String       @unique @map("qr_code_id")
+    nfcId                  String       @unique @map("nfc_id")
+    shortUrl               String       @unique @map("short_url")
+    status                 AlbumStatus  @default(ACTIVE)
+    privacy                AlbumPrivacy @default(PRIVATE)
+    maxFileSizeMB          Int          @default(100) @map("max_file_size_mb")
+    maxVideoLengthSec      Int          @default(300) @map("max_video_length_sec")
+    allowVideos            Boolean      @default(true) @map("allow_videos")
+    requireContributorName Boolean      @default(false) @map("require_contributor_name")
+    enableReactions        Boolean      @default(false) @map("enable_reactions")
+    accessCodeHash         String?      @map("access_code_hash")
+    accessCodeEncrypted    String?      @map("access_code_encrypted")
+    uploadDescription      String?      @map("upload_description")
+    eventDate              DateTime?    @map("event_date")
+    eventLocation          String?      @map("event_location")
+    expiresAt              DateTime?    @map("expires_at")
+    autoArchiveAt          DateTime?    @map("auto_archive_at")
+    mediaCount             Int          @default(0) @map("media_count")
+    totalSizeBytes         BigInt       @default(0) @map("total_size_bytes")
+    viewCount              Int          @default(0) @map("view_count")
+    downloadCount          Int          @default(0) @map("download_count")
+    uniqueContributors     Int          @default(0) @map("unique_contributors")
+    createdAt              DateTime     @default(now()) @map("created_at")
+    updatedAt              DateTime     @updatedAt @map("updated_at")
+    lastActivityAt         DateTime     @default(now()) @map("last_activity_at")
+
+    owner              User                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+    media              Media[]
+    analytics          AlbumAnalytics[]
+    viewLogs           AlbumViewLog[]
+    accessCodeAttempts AccessCodeAttempt[]
+    accessCodeSessions AccessCodeSession[]
+    accessCodes        AlbumAccessCode[]
+
+    @@index([ownerId])
+    @@index([qrCodeId])
+    @@index([nfcId])
+    @@index([shortUrl])
+    @@index([slug])
+    @@index([status])
+    @@index([expiresAt])
+    @@map("albums")
+}
+
+model Media {
+    id                   String      @id @default(uuid())
+    albumId              String      @map("album_id")
+    type                 MediaType
+    status               MediaStatus @default(UPLOADING)
+    fileName             String      @map("file_name")
+    originalFileName     String      @map("original_file_name")
+    mimeType             String      @map("mime_type")
+    fileSizeBytes        BigInt      @map("file_size_bytes")
+    s3Key                String      @map("s3_key")
+    s3Bucket             String      @map("s3_bucket")
+    cloudinaryPublicId   String?     @map("cloudinary_public_id")
+    cdnUrl               String      @map("cdn_url")
+    thumbnailUrl         String?     @map("thumbnail_url")
+    thumbnailS3Key       String?     @map("thumbnail_s3_key")
+    width                Int?
+    height               Int?
+    aspectRatio          Float?      @map("aspect_ratio")
+    durationSeconds      Int?        @map("duration_seconds")
+    videoCodec           String?     @map("video_codec")
+    audioBitrate         Int?        @map("audio_bitrate")
+    exifData             Json?       @map("exif_data")
+    location             Json?
+    contributorName      String?     @map("contributor_name")
+    contributorDeviceId  String?     @map("contributor_device_id")
+    contributorIp        String?     @map("contributor_ip")
+    contributorUserAgent String?     @map("contributor_user_agent")
+    caption              String?
+    viewCount            Int         @default(0) @map("view_count")
+    downloadCount        Int         @default(0) @map("download_count")
+    reactionCount        Int         @default(0) @map("reaction_count")
+    uploadedAt           DateTime    @default(now()) @map("uploaded_at")
+    processedAt          DateTime?   @map("processed_at")
+    createdAt            DateTime    @default(now()) @map("created_at")
+    updatedAt            DateTime    @updatedAt @map("updated_at")
+
+    album     Album      @relation(fields: [albumId], references: [id], onDelete: Cascade)
+    reactions Reaction[]
+
+    @@index([albumId])
+    @@index([status])
+    @@index([contributorDeviceId])
+    @@index([uploadedAt])
+    @@map("media")
+}
+
+model Reaction {
+    id        String   @id @default(uuid())
+    mediaId   String   @map("media_id")
+    deviceId  String   @map("device_id")
+    emoji     String
+    createdAt DateTime @default(now()) @map("created_at")
+
+    media Media @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+    @@unique([mediaId, deviceId, emoji])
+    @@index([mediaId])
+    @@map("reactions")
+}
+
+model AlbumAnalytics {
+    id        String             @id @default(uuid())
+    albumId   String             @map("album_id")
+    eventType AnalyticsEventType @map("event_type")
+    deviceId  String?            @map("device_id")
+    ipAddress String?            @map("ip_address")
+    userAgent String?            @map("user_agent")
+    country   String?
+    city      String?
+    metadata  Json?
+    timestamp DateTime           @default(now())
+
+    album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+    @@index([albumId])
+    @@index([eventType])
+    @@index([timestamp])
+    @@map("album_analytics")
+}
+
+model AlbumViewLog {
+    id         String   @id @default(uuid())
+    albumId    String   @map("album_id")
+    viewerHash String   @map("viewer_hash")
+    ipAddress  String?  @map("ip_address")
+    userAgent  String?  @map("user_agent")
+    deviceId   String?  @map("device_id")
+    sessionId  String?  @map("session_id")
+    viewedAt   DateTime @default(now()) @map("viewed_at")
+    viewedDate DateTime @map("viewed_date")
+
+    album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+    @@unique([albumId, viewerHash, viewedDate])
+    @@index([albumId])
+    @@index([viewerHash])
+    @@index([viewedAt])
+    @@index([viewedDate])
+    @@map("album_view_logs")
+}
+
+model RateLimitLog {
+    id           String   @id @default(uuid())
+    identifier   String
+    endpoint     String
+    requestCount Int      @default(1) @map("request_count")
+    windowStart  DateTime @map("window_start")
+    blocked      Boolean  @default(false)
+    createdAt    DateTime @default(now()) @map("created_at")
+
+    @@unique([identifier, endpoint, windowStart])
+    @@index([identifier])
+    @@index([windowStart])
+    @@map("rate_limit_logs")
+}
+
+model BlockedDevice {
+    id        String    @id @default(uuid())
+    deviceId  String    @unique @map("device_id")
+    albumId   String?   @map("album_id")
+    reason    String
+    blockedAt DateTime  @default(now()) @map("blocked_at")
+    expiresAt DateTime? @map("expires_at")
+
+    @@index([deviceId])
+    @@index([albumId])
+    @@map("blocked_devices")
+}
+
+model SubscriptionPlan {
+    id                String           @id @default(uuid())
+    tier              SubscriptionTier @unique
+    name              String
+    description       String?
+    priceMonthly      Decimal          @default(0) @map("price_monthly") @db.Decimal(10, 2)
+    maxPhotos         Int              @map("max_photos")
+    maxVideos         Int              @map("max_videos")
+    maxAlbums         Int              @map("max_albums")
+    maxPhotoSizeMB    Int              @map("max_photo_size_mb")
+    maxVideoSizeMB    Int              @map("max_video_size_mb")
+    maxVideoLengthSec Int              @map("max_video_length_sec")
+    totalStorageGB    Int              @map("total_storage_gb")
+    allowVideos       Boolean          @default(false) @map("allow_videos")
+    isActive          Boolean          @default(true) @map("is_active")
+    paystackPlanCode  String?          @map("paystack_plan_code")
+    stripePriceId     String?          @map("stripe_price_id")
+    createdAt         DateTime         @default(now()) @map("created_at")
+    updatedAt         DateTime         @updatedAt @map("updated_at")
+
+    subscriptions Subscription[]
+
+    @@map("subscription_plans")
+}
+
+model Subscription {
+    id                       String             @id @default(uuid())
+    userId                   String             @map("user_id")
+    planId                   String             @map("plan_id")
+    status                   SubscriptionStatus @default(TRIAL)
+    startDate                DateTime           @default(now()) @map("start_date")
+    endDate                  DateTime?          @map("end_date")
+    cancelledAt              DateTime?          @map("cancelled_at")
+    cancelAtPeriodEnd        Boolean            @default(false) @map("cancel_at_period_end")
+    nextBillingDate          DateTime?          @map("next_billing_date")
+    paymentProvider          PaymentProvider?   @map("payment_provider")
+    paystackCustomerCode     String?            @unique @map("paystack_customer_code")
+    paystackPlanCode         String?            @map("paystack_plan_code")
+    paystackSubscriptionCode String?            @unique @map("paystack_subscription_code")
+    stripeCustomerId         String?            @unique @map("stripe_customer_id")
+    stripePriceId            String?            @map("stripe_price_id")
+    stripeSubscriptionId     String?            @map("stripe_subscription_id")
+    createdAt                DateTime           @default(now()) @map("created_at")
+    updatedAt                DateTime           @updatedAt @map("updated_at")
+
+    user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+    plan SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+    @@index([userId])
+    @@index([planId])
+    @@index([status])
+    @@index([paymentProvider])
+    @@index([stripeCustomerId])
+    @@index([paystackCustomerCode])
+    @@map("subscriptions")
+}
+
+model UsageStats {
+    id               String    @id @default(uuid())
+    userId           String    @unique @map("user_id")
+    photoCount       Int       @default(0) @map("photo_count")
+    videoCount       Int       @default(0) @map("video_count")
+    albumCount       Int       @default(0) @map("album_count")
+    storageUsedBytes BigInt    @default(0) @map("storage_used_bytes")
+    lastPhotoUpload  DateTime? @map("last_photo_upload")
+    lastVideoUpload  DateTime? @map("last_video_upload")
+    updatedAt        DateTime  @updatedAt @map("updated_at")
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId])
+    @@map("usage_stats")
+}
+
+model AccessCodeAttempt {
+    id          String   @id @default(uuid())
+    albumId     String   @map("album_id")
+    identifier  String
+    ipAddress   String   @map("ip_address")
+    deviceId    String?  @map("device_id")
+    success     Boolean  @default(false)
+    attemptedAt DateTime @default(now()) @map("attempted_at")
+
+    album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+    @@index([albumId, ipAddress])
+    @@index([identifier, ipAddress])
+    @@index([attemptedAt])
+    @@map("access_code_attempts")
+}
+
+model AccessCodeSession {
+    id            String    @id @default(uuid())
+    albumId       String    @map("album_id")
+    identifier    String
+    sessionToken  String    @unique @map("session_token")
+    deviceId      String?   @map("device_id")
+    ipAddress     String    @map("ip_address")
+    userAgent     String?   @map("user_agent")
+    expiresAt     DateTime  @map("expires_at")
+    isBlacklisted Boolean   @default(false) @map("is_blacklisted")
+    blacklistedAt DateTime? @map("blacklisted_at")
+    revokedAt     DateTime? @map("revoked_at")
+    createdAt     DateTime  @default(now()) @map("created_at")
+    lastUsedAt    DateTime  @default(now()) @map("last_used_at")
+
+    album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+    @@index([albumId, sessionToken])
+    @@index([identifier, sessionToken])
+    @@index([expiresAt])
+    @@index([isBlacklisted])
+    @@map("access_code_sessions")
+}
+
+model AlbumAccessCode {
+    id                  String    @id @default(uuid())
+    albumId             String    @map("album_id")
+    accessCodeHash      String    @map("access_code_hash")
+    accessCodeEncrypted String    @map("access_code_encrypted")
+    isBlacklisted       Boolean   @default(false) @map("is_blacklisted")
+    blacklistedAt       DateTime? @map("blacklisted_at")
+    note                String?
+    createdAt           DateTime  @default(now()) @map("created_at")
+    updatedAt           DateTime  @updatedAt @map("updated_at")
+
+    album Album @relation(fields: [albumId], references: [id], onDelete: Cascade)
+
+    @@index([albumId])
+    @@index([isBlacklisted])
+    @@index([createdAt])
+    @@map("album_access_codes")
+}
+
+model ContactMessage {
+    id          String          @id @default(uuid())
+    title       String
+    description String
+    tags        String[]
+    severity    ContactSeverity @default(MEDIUM)
+    status      ContactStatus   @default(NEW)
+    userId      String?         @map("user_id")
+    userEmail   String?         @map("user_email")
+    ipAddress   String?         @map("ip_address")
+    userAgent   String?         @map("user_agent")
+    createdAt   DateTime        @default(now()) @map("created_at")
+    updatedAt   DateTime        @updatedAt @map("updated_at")
+    resolvedAt  DateTime?       @map("resolved_at")
+
+    user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+    @@index([status])
+    @@index([severity])
+    @@index([userId])
+    @@index([createdAt])
+    @@map("contact_messages")
+}
+
+model DeletedUserEmail {
+    id           String    @id @default(uuid())
+    email        String    @unique
+    userId       String?   @map("user_id")
+    deletedAt    DateTime  @default(now()) @map("deleted_at")
+    trialEndedAt DateTime? @map("trial_ended_at")
+    reason       String?
+
+    @@index([email])
+    @@map("deleted_user_emails")
+}
+
+enum SpecialRequestStatus {
+    PENDING
+    REVIEWING
+    QUOTED
+    APPROVED
+    REJECTED
+    COMPLETED
+}
+
+model SpecialRequest {
+    id                  String               @id @default(uuid())
+    userId              String?              @map("user_id")
+    userEmail           String
+    firstName           String               @map("first_name")
+    lastName            String               @map("last_name")
+    organizationName    String?              @map("organization_name")
+    phoneNumber         String?              @map("phone_number")
+    requestType         String               @map("request_type") // "EVENT", "PROJECT", "ENTERPRISE"
+    eventName           String?              @map("event_name")
+    eventDate           DateTime?            @map("event_date")
+    eventLocation       String?              @map("event_location")
+    expectedAttendees   Int?                 @map("expected_attendees")
+    expectedAlbums      Int?                 @map("expected_albums")
+    expectedPhotos      Int?                 @map("expected_photos")
+    expectedVideos      Int?                 @map("expected_videos")
+    storageNeededGB     Int?                 @map("storage_needed_gb")
+    customFeatures      String[]             @map("custom_features")
+    specialRequirements String?              @map("special_requirements")
+    budget              Decimal?             @db.Decimal(10, 2)
+    estimatedPrice      Decimal?             @map("estimated_price") @db.Decimal(10, 2)
+    calculatedPrice     Decimal?             @map("calculated_price") @db.Decimal(10, 2)
+    status              SpecialRequestStatus @default(PENDING)
+    notes               String?
+    reviewedBy          String?              @map("reviewed_by")
+    reviewedAt          DateTime?            @map("reviewed_at")
+    ipAddress           String?              @map("ip_address")
+    userAgent           String?              @map("user_agent")
+    createdAt           DateTime             @default(now()) @map("created_at")
+    updatedAt           DateTime             @updatedAt @map("updated_at")
+
+    user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+    @@index([status])
+    @@index([userId])
+    @@index([userEmail])
+    @@index([requestType])
+    @@index([createdAt])
+    @@map("special_requests")
+}

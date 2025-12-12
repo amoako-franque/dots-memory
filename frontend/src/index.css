@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@layer base {
+    html {
+        background-color: #FDF8F3;
+        scroll-behavior: smooth;
+    }
+
+    body {
+        @apply antialiased transition-colors duration-200;
+        font-feature-settings: "rlig" 1, "calt" 1;
+        background-color: #FDF8F3;
+        color: #8B7355;
+        min-height: 100vh;
+    }
+
+    .dark html {
+        background-color: #1A1A1A;
+    }
+
+    .dark body {
+        background-color: #1A1A1A;
+        color: #E5E5E5;
+    }
+
+    #root {
+        background-color: #FDF8F3;
+        min-height: 100vh;
+    }
+
+    /* Ensure buttons are always visible */
+    button {
+        @apply font-medium;
+    }
+}
